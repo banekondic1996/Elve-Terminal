@@ -1,3 +1,4 @@
+# <img width="82" height="auto" alt="Elve Terminal EE" src="https://github.com/user-attachments/assets/b3ade798-01fe-4f30-96b2-aa524476716c" /> Elve Terminal
 This is just vibe coded Terminal that i made for personal usage. <br>
 Why?<br>
 Well cause I'm annoyed with copy+c copy+v and tracking clipboard history of commands all the time,
