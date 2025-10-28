@@ -1,0 +1,48 @@
+{
+  "name": "ElveTerminal",
+  "version": "1.0.0",
+  "main": "main.js",
+  "window": {
+    "title": "Elve terminal",
+    "width": 1200,
+    "height": 800,
+    "min_width": 800,
+    "min_height": 600
+  },
+  "chromium-args": "--disable-web-security",
+  "dependencies": {
+    "node-pty": "^1.1.0-beta37",
+    "xterm": "^5.3.0",
+    "xterm-addon-fit": "^0.8.0",
+    "xterm-addon-web-links": "^0.9.0"
+  },
+  "build": {
+    "appId": "com.elve.terminal",
+    "productName": "Elve Terminal",
+    "files": [
+      "dist/**/*",
+      "main.js",
+      "preload.js",
+      "terminal.js",
+      "font.css",
+      "styles.css",
+      "index.html",
+      "package.json"
+    ],
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Utility",
+      "icon": "assets/icons" 
+    }
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.12",
+    "nw": "^0.80.0"
+  },
+  "scripts": {
+    "start nw": "nw .",
+    "start electron": "electron .",
+    "dist": "electron-builder"
+  }
+}
