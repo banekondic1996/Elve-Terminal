@@ -3,8 +3,14 @@ This is just vibe coded Terminal that i made for personal usage. <br>
 Why?<br>
 Well cause I'm annoyed with copy+c copy+v and tracking clipboard history of commands all the time,
 so i made this terminal. <br> It's just testing version that will be used in my linux desktop enviroment I'm making.
-It won't use electron. <br> And i won't bother adding themes and settings for it now, i just need history to work. <br>
-You just click command from history tab and it gets executed, or you right click to paste it into input. <br>
+It won't use electron. <br> And i won't bother adding themes and settings for it now, i just need history to work. <br>You 
+You just click command from history tab and it gets executed, or you right click to paste it into input. <br> <br>
+Why is it better then others?<br>
+-Eaiser to execute previous commands from history<br>
+-Eaiser to clear input<br>
+-It auto adds sudo to pacman, apt-get. Cause WHY NOT? Why just warn me i need sudo and waste my time...<br><br>
+AI won't be added, but I'm considering it
+<br>
 It's just for linux <br> <br>
 **Download** - <a href="https://github.com/banekondic1996/Elve-Terminal/releases/tag/1.0">Link</a> <br><br>
 <img width="1266" height="709" alt="image" src="https://github.com/user-attachments/assets/afb2879e-55c4-4d9b-97cc-15ef03c3406d" />
