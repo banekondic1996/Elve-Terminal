@@ -6,4 +6,5 @@ so i made this terminal. <br> It's just testing version that will be used in my 
 It won't use electron. <br> And i won't bother adding themes and settings for it now, i just need history to work. <br>
 You just click command from history tab and it gets executed, or you right click to paste it into input. <br>
 It's just for linux
+Download - [https://github.com/banekondic1996/Elve-Terminal/releases/tag/1.0](url)
 <img width="1266" height="709" alt="image" src="https://github.com/user-attachments/assets/afb2879e-55c4-4d9b-97cc-15ef03c3406d" />
