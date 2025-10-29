@@ -1,6 +1,7 @@
 {
   "name": "ElveTerminal",
   "version": "1.0.0",
+  "author": "Bane Kondic",
   "main": "main.js",
   "window": {
     "title": "Elve terminal",
@@ -18,9 +19,13 @@
   },
   "build": {
     "appId": "com.elve.terminal",
+    "asar": true,
     "productName": "Elve Terminal",
     "files": [
+      "!**/node_modules/*/{test,__tests__,*.md,*.map,*.log}",
+      "!**/node_modules/.bin",
       "dist/**/*",
+      "assets/**/*",
       "main.js",
       "preload.js",
       "terminal.js",
@@ -30,9 +35,11 @@
       "package.json"
     ],
     "linux": {
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "category": "Utility",
-      "icon": "assets/icons" 
+      "icon": "assets/icons"
     }
   },
   "devDependencies": {
@@ -41,8 +48,8 @@
     "nw": "^0.80.0"
   },
   "scripts": {
-    "start nw": "nw .",
-    "start electron": "electron .",
+    "startnw": "nw .",
+    "startelectron": "electron .",
     "dist": "electron-builder"
   }
 }

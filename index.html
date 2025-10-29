@@ -5,7 +5,7 @@
     <title>Linux Terminal</title>
     <link rel="stylesheet" href="node_modules/xterm/css/xterm.css">
     <link rel="stylesheet" href="styles.css">
-    <link href="font.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="terminal-container">
@@ -13,7 +13,13 @@
       <div class="tab-bar">
         <div class="tabs" id="tabs-container"></div>
         <div class="toolbar">
-          <button class="toolbar-btn" id="clear-console" title="Clear Console (Ctrl+L)">
+          <button class="toolbar-btn" id="password-lock" title="Quick Password">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0110 0v4"/>
+            </svg>
+          </button>
+          <button class="toolbar-btn" id="clear-console" title="Clear Console & Kill Process">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
             </svg>
@@ -40,17 +46,12 @@
             </svg>
             <span>History</span>
           </button>
-          <button class="toolbar-btn" id="settings-toggle" title="Settings">
-            <svg xmlns="http://www.w3.org/2000/svg"
-            width="16" height="16" viewBox="0 0 24 24"
-            fill="none" stroke="currentColor" stroke-width="2"
-            stroke-linecap="round" stroke-linejoin="round"
-            role="img" aria-label="Settings">
-         <title>Settings</title>
-         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06A2 2 0 1 1 4.27 16.9l.06-.06A1.65 1.65 0 0 0 4.66 15 1.65 1.65 0 0 0 3.15 14H3a2 2 0 1 1 0-4h.15a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06A2 2 0 1 1 7.1 4.27l.06.06A1.65 1.65 0 0 0 9 4.66 1.65 1.65 0 0 0 10.5 3.15V3a2 2 0 1 1 4 0v.15a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06A2 2 0 1 1 19.73 7.1l-.06.06A1.65 1.65 0 0 0 19.34 9 1.65 1.65 0 0 0 20.85 10.5H21a2 2 0 1 1 0 4h-.15a1.65 1.65 0 0 0-1.51 1z"/>
-         <circle cx="12" cy="12" r="3"/>
-       </svg>
-       
+          <button class="toolbar-btn" id="menu-toggle" title="Menu">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="1"/>
+              <circle cx="12" cy="5" r="1"/>
+              <circle cx="12" cy="19" r="1"/>
+            </svg>
           </button>
         </div>
       </div>
@@ -62,7 +63,7 @@
 
         <!-- History Sidebar -->
         <div class="history-sidebar" id="history-sidebar" style="display: none;">
-          <div class="history-header">
+          <div class="history-header color">
             <h3>Command History</h3>
             <p>Click to execute</p>
           </div>
@@ -73,6 +74,7 @@
         <div class="settings-panel" id="settings-panel" style="display: none;">
           <div class="settings-header">
             <h3>Terminal Settings</h3>
+            <button class="close-panel" id="close-settings">✕</button>
           </div>
           <div class="settings-content">
             <div class="setting-group">
@@ -103,7 +105,49 @@
               </select>
             </div>
             
-            <button class="settings-apply" id="apply-settings">Apply Settings</button>
+            <div class="setting-group">
+              <label>Color Hue: <span id="hue-value">0</span>°</label>
+              <input type="range" id="color-hue" min="0" max="360" value="0">
+            </div>
+            
+            <div class="setting-group">
+              <label>Brightness: <span id="brightness-value">100</span>%</label>
+              <input type="range" id="brightness" min="50" max="150" value="100">
+            </div>
+            
+            <div class="setting-group">
+              <label>Background Opacity: <span id="opacity-value">100</span>%</label>
+              <input type="range" id="bg-opacity" min="50" max="100" value="100">
+            </div>
+            
+            <div class="setting-group">
+              <label>
+                <input type="checkbox" id="beep-on-idle">
+                Beep when output stops (3s idle)
+              </label>
+            </div>
+            
+            <div class="setting-group">
+              <label>
+                <input type="checkbox" id="show-input-box">
+                Show input box at bottom
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Alias Manager -->
+        <div class="alias-panel" id="alias-panel" style="display: none;">
+          <div class="alias-header">
+            <h3>Bash Aliases</h3>
+            <button class="close-panel" id="close-aliases">✕</button>
+          </div>
+          <div class="alias-content">
+            <div id="alias-list"></div>
+            <button class="add-alias-btn" id="add-alias">+ Add Alias</button>
+            <div class="alias-actions">
+              <button class="settings-apply" id="save-aliases">Save Aliases</button>
+            </div>
           </div>
         </div>
       </div>
@@ -113,8 +157,12 @@
     <div class="context-menu" id="context-menu" style="display: none;">
       <div class="context-item" data-action="copy">Copy</div>
       <div class="context-item" data-action="paste">Paste</div>
+      <div class="context-item" data-action="delete-selection">Delete Selection</div>
       <div class="context-divider"></div>
       <div class="context-item" data-action="open-folder">Open Current Folder</div>
+      <div class="context-divider"></div>
+      <div class="context-item" data-action="split-horizontal">Split Horizontal</div>
+      <div class="context-item" data-action="split-vertical">Split Vertical</div>
       <div class="context-divider"></div>
       <div class="context-item" data-action="pacman">Install with pacman</div>
       <div class="context-item" data-action="yay">Install with yay</div>
@@ -130,6 +178,48 @@
       <div class="context-item" data-action="copy-to-input">Copy to Input</div>
       <div class="context-divider"></div>
       <div class="context-item" data-action="copy">Copy</div>
+    </div>
+
+    <!-- Menu Dropdown -->
+    <div class="dropdown-menu" id="main-menu" style="display: none;">
+      <div class="menu-item" data-action="new-window">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+        </svg>
+        New Window
+      </div>
+      <div class="menu-item" data-action="control-aliases">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+        Control Aliases
+      </div>
+      <div class="menu-item" data-action="settings">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"/>
+        </svg>
+        Settings
+      </div>
+    </div>
+
+    <!-- Password Dialog -->
+    <div class="modal-overlay" id="password-overlay" style="display: none;">
+      <div class="modal-dialog">
+        <h3>Quick Password</h3>
+        <p>Enter a password to save for quick sudo access</p>
+        <input type="password" id="password-input" placeholder="Enter password">
+        <div class="modal-actions">
+          <button class="modal-btn" id="save-password">Save</button>
+          <button class="modal-btn secondary" id="cancel-password">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input Box -->
+    <div class="input-box-container" id="input-box-container" style="display: none;">
+      <input type="text" id="bottom-input" class="bottom-input" placeholder="Type here to send to terminal...">
     </div>
     
     <script src="terminal.js"></script>

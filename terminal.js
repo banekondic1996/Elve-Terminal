@@ -5,6 +5,7 @@ const pty = require('node-pty');
 const os = require('os');
 const path = require('path');
 const { exec } = require('child_process');
+const fs = require('fs');
 
 class TerminalApp {
   constructor() {
@@ -14,12 +15,21 @@ class TerminalApp {
     this.commandHistory = [];
     this.selectedText = '';
     this.nextTabId = 1;
+    this.savedPassword = null;
+    this.lastOutputTime = {};
+    this.outputMonitorInterval = null;
+    this.hasOutputSinceCheck = {};
     
     // Settings
     this.settings = {
       fontFamily: 'JetBrains Mono',
       fontSize: 14,
-      theme: 'github-dark'
+      theme: 'github-dark',
+      colorHue: 0,
+      brightness: 100,
+      bgOpacity: 100,
+      beepOnIdle: false,
+      showInputBox: false
     };
     
     this.themes = {
@@ -136,13 +146,17 @@ class TerminalApp {
     this.historyToggle = document.getElementById('history-toggle');
     this.historySidebar = document.getElementById('history-sidebar');
     this.historyList = document.getElementById('history-list');
-    this.settingsToggle = document.getElementById('settings-toggle');
+    this.menuToggle = document.getElementById('menu-toggle');
+    this.mainMenu = document.getElementById('main-menu');
     this.settingsPanel = document.getElementById('settings-panel');
+    this.aliasPanel = document.getElementById('alias-panel');
     this.contextMenu = document.getElementById('context-menu');
     this.historyContextMenu = document.getElementById('history-context-menu');
     this.clearConsoleBtn = document.getElementById('clear-console');
     this.clearInputBtn = document.getElementById('clear-input');
     this.killProcessBtn = document.getElementById('kill-process');
+    this.passwordLockBtn = document.getElementById('password-lock');
+    this.focusedSplitIndex = 0; // Track which split pane is focused
     
     this.init();
   }
@@ -152,61 +166,230 @@ class TerminalApp {
     this.addTab();
     this.attachGlobalEvents();
     this.startHistoryMonitor();
+    this.startOutputMonitor();
+    this.applyThemeToUI();
   }
 
   loadSettings() {
-    // Load settings from localStorage if available
     const saved = localStorage.getItem('terminalSettings');
     if (saved) {
       this.settings = { ...this.settings, ...JSON.parse(saved) };
     }
     
-    // Update UI
     const fontFamilySelect = document.getElementById('font-family');
     const fontSizeInput = document.getElementById('font-size');
     const themeSelect = document.getElementById('theme');
+    const colorHueInput = document.getElementById('color-hue');
+    const brightnessInput = document.getElementById('brightness');
+    const bgOpacityInput = document.getElementById('bg-opacity');
+    const beepCheckbox = document.getElementById('beep-on-idle');
+    const showInputBoxCheckbox = document.getElementById('show-input-box');
     
     if (fontFamilySelect) fontFamilySelect.value = this.settings.fontFamily;
     if (fontSizeInput) fontSizeInput.value = this.settings.fontSize;
     if (themeSelect) themeSelect.value = this.settings.theme;
+    if (colorHueInput) colorHueInput.value = this.settings.colorHue;
+    if (brightnessInput) brightnessInput.value = this.settings.brightness;
+    if (bgOpacityInput) bgOpacityInput.value = this.settings.bgOpacity;
+    if (beepCheckbox) beepCheckbox.checked = this.settings.beepOnIdle;
+    if (showInputBoxCheckbox) showInputBoxCheckbox.checked = this.settings.showInputBox;
     
     document.getElementById('font-size-value').textContent = this.settings.fontSize;
+    document.getElementById('hue-value').textContent = this.settings.colorHue;
+    document.getElementById('brightness-value').textContent = this.settings.brightness;
+    document.getElementById('opacity-value').textContent = this.settings.bgOpacity;
+    
+    // Apply input box visibility
+    this.toggleInputBox(this.settings.showInputBox);
   }
 
   saveSettings() {
     localStorage.setItem('terminalSettings', JSON.stringify(this.settings));
   }
 
+  adjustColorWithHueAndBrightness(hex, hue, brightness) {
+    // Convert hex to RGB
+    let r = parseInt(hex.slice(1, 3), 16);
+    let g = parseInt(hex.slice(3, 5), 16);
+    let b = parseInt(hex.slice(5, 7), 16);
+    
+    // Convert to HSL
+    r /= 255;
+    g /= 255;
+    b /= 255;
+    
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    let h, s, l = (max + min) / 2;
+    
+    if (max === min) {
+      h = s = 0;
+    } else {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      
+      switch (max) {
+        case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+        case g: h = ((b - r) / d + 2) / 6; break;
+        case b: h = ((r - g) / d + 4) / 6; break;
+      }
+    }
+    
+    // Apply hue rotation
+    h = (h + hue / 360) % 1;
+    
+    // Apply brightness
+    l = Math.max(0, Math.min(1, l * (brightness / 100)));
+    
+    // Convert back to RGB
+    let r2, g2, b2;
+    
+    if (s === 0) {
+      r2 = g2 = b2 = l;
+    } else {
+      const hue2rgb = (p, q, t) => {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+      };
+      
+      const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+      const p = 2 * l - q;
+      
+      r2 = hue2rgb(p, q, h + 1/3);
+      g2 = hue2rgb(p, q, h);
+      b2 = hue2rgb(p, q, h - 1/3);
+    }
+    
+    const toHex = (x) => {
+      const hex = Math.round(x * 255).toString(16);
+      return hex.length === 1 ? '0' + hex : hex;
+    };
+    
+    return `#${toHex(r2)}${toHex(g2)}${toHex(b2)}`;
+  }
+
+  applyThemeToUI() {
+    const theme = this.themes[this.settings.theme];
+    const hue = this.settings.colorHue;
+    const brightness = this.settings.brightness;
+    const opacity = this.settings.bgOpacity / 100;
+    
+    const adjustedBg = this.adjustColorWithHueAndBrightness(theme.background, hue, brightness);
+    const adjustedFg = this.adjustColorWithHueAndBrightness(theme.foreground, hue, brightness);
+    
+    // Parse RGB from adjusted background
+    const bgR = parseInt(adjustedBg.slice(1, 3), 16);
+    const bgG = parseInt(adjustedBg.slice(3, 5), 16);
+    const bgB = parseInt(adjustedBg.slice(5, 7), 16);
+    
+    const lightBgR = Math.min(255, bgR + 15);
+    const lightBgG = Math.min(255, bgG + 15);
+    const lightBgB = Math.min(255, bgB + 15);
+    
+    // Apply to all elements
+    document.body.style.background = `rgba(${bgR}, ${bgG}, ${bgB}, ${opacity})`;
+    document.body.style.color = adjustedFg;
+    
+    const container = document.querySelector('.terminal-container');
+    if (container) container.style.background = `rgba(${bgR}, ${bgG}, ${bgB}, ${opacity})`;
+    
+    const tabBar = document.querySelector('.tab-bar');
+    if (tabBar) tabBar.style.background = `rgba(${lightBgR}, ${lightBgG}, ${lightBgB}, ${opacity})`;
+    
+    const sidebars = document.querySelectorAll('.history-sidebar, .settings-panel, .alias-panel');
+    sidebars.forEach(sidebar => {
+      sidebar.style.background = `rgba(${lightBgR}, ${lightBgG}, ${lightBgB}, ${opacity})`;
+    });
+    const colors = document.querySelectorAll('.color');
+    colors.forEach(color => {
+      color.style.background = `rgba(${bgR}, ${bgG}, ${bgB}, ${opacity})`;
+    });
+    
+    const inputBox = document.getElementById('input-box-container');
+    if (inputBox) {
+      inputBox.style.background = `rgba(${lightBgR}, ${lightBgG}, ${lightBgB}, ${opacity})`;
+    }
+    
+    const bottomInput = document.getElementById('bottom-input');
+    if (bottomInput) {
+      bottomInput.style.background = `rgba(${bgR}, ${bgG}, ${bgB}, ${opacity})`;
+      bottomInput.style.color = adjustedFg;
+    }
+    
+    const contextMenus = document.querySelectorAll('.context-menu, .dropdown-menu');
+    contextMenus.forEach(menu => {
+      menu.style.background = `rgba(${lightBgR}, ${lightBgG}, ${lightBgB}, ${opacity})`;
+    });
+    
+    const modalOverlay = document.getElementById('password-overlay');
+    if (modalOverlay) {
+      const modal = modalOverlay.querySelector('.modal-dialog');
+      if (modal) {
+        modal.style.background = `rgba(${lightBgR}, ${lightBgG}, ${lightBgB}, ${opacity})`;
+      }
+    }
+  }
+
+  startOutputMonitor() {
+    this.outputMonitorInterval = setInterval(() => {
+      if (this.settings.beepOnIdle && document.hidden) {
+        const now = Date.now();
+        
+        Object.keys(this.lastOutputTime).forEach(tabId => {
+          const timeSinceOutput = now - this.lastOutputTime[tabId];
+          
+          // If had output before, but now idle for 3 seconds
+          if (this.hasOutputSinceCheck[tabId] && timeSinceOutput >= 3000 && timeSinceOutput < 3200) {
+            this.playBeep();
+            this.hasOutputSinceCheck[tabId] = false;
+          }
+        });
+      }
+    }, 200);
+  }
+
+  playBeep() {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    oscillator.frequency.value = 800;
+    oscillator.type = 'sine';
+    
+    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+    
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.5);
+  }
+
   startHistoryMonitor() {
-    // Poll bash history file every 2 seconds to update command history
     setInterval(() => {
-      const fs = require('fs');
       const historyPath = path.join(os.homedir(), '.bash_history');
       
       try {
         if (fs.existsSync(historyPath)) {
-          // Force bash to write history
-          const tab = this.tabs.find(t => t.id === this.activeTab);
-          if (tab && tab.ptyProcess) {
-            // Send history -a command to append to history file
-            // We do this silently by using HISTCONTROL
-            const stats = fs.statSync(historyPath);
-            if (!this.lastHistoryMtime || stats.mtimeMs > this.lastHistoryMtime) {
-              this.lastHistoryMtime = stats.mtimeMs;
+          const stats = fs.statSync(historyPath);
+          if (!this.lastHistoryMtime || stats.mtimeMs > this.lastHistoryMtime) {
+            this.lastHistoryMtime = stats.mtimeMs;
+            
+            const historyContent = fs.readFileSync(historyPath, 'utf8');
+            const lines = historyContent.trim().split('\n').filter(l => l.trim());
+            
+            const uniqueCommands = [...new Set(lines.reverse())].slice(0, 50);
+            
+            if (JSON.stringify(uniqueCommands) !== JSON.stringify(this.commandHistory)) {
+              this.commandHistory = uniqueCommands;
               
-              const historyContent = fs.readFileSync(historyPath, 'utf8');
-              const lines = historyContent.trim().split('\n').filter(l => l.trim());
-              
-              // Get last 50 unique commands
-              const uniqueCommands = [...new Set(lines.reverse())].slice(0, 50);
-              
-              // Update if changed
-              if (JSON.stringify(uniqueCommands) !== JSON.stringify(this.commandHistory)) {
-                this.commandHistory = uniqueCommands;
-                
-                if (this.showHistory) {
-                  this.renderHistorySidebar();
-                }
+              if (this.showHistory) {
+                this.renderHistorySidebar();
               }
             }
           }
@@ -214,11 +397,18 @@ class TerminalApp {
       } catch (err) {
         // Silently fail
       }
-    }, 1000); // Check every second for faster updates
+    }, 1000);
   }
 
-  createTerminal(cwd) {
+  createTerminal(cwd, splitParent = null) {
     const currentTheme = this.themes[this.settings.theme];
+    const hue = this.settings.colorHue;
+    const brightness = this.settings.brightness;
+    
+    const tintedTheme = {};
+    Object.keys(currentTheme).forEach(key => {
+      tintedTheme[key] = this.adjustColorWithHueAndBrightness(currentTheme[key], hue, brightness);
+    });
     
     const term = new Terminal({
       fontFamily: `"${this.settings.fontFamily}", "Courier New", monospace`,
@@ -229,29 +419,11 @@ class TerminalApp {
       cursorBlink: true,
       cursorStyle: 'block',
       theme: {
-        background: currentTheme.background,
-        foreground: currentTheme.foreground,
-        cursor: currentTheme.cursor,
-        cursorAccent: currentTheme.background,
-        selection: '#388bfd40',
-        black: currentTheme.black,
-        red: currentTheme.red,
-        green: currentTheme.green,
-        yellow: currentTheme.yellow,
-        blue: currentTheme.blue,
-        magenta: currentTheme.magenta,
-        cyan: currentTheme.cyan,
-        white: currentTheme.white,
-        brightBlack: currentTheme.brightBlack,
-        brightRed: currentTheme.brightRed,
-        brightGreen: currentTheme.brightGreen,
-        brightYellow: currentTheme.brightYellow,
-        brightBlue: currentTheme.brightBlue,
-        brightMagenta: currentTheme.brightMagenta,
-        brightCyan: currentTheme.brightCyan,
-        brightWhite: currentTheme.brightWhite
+        ...tintedTheme,
+        cursorAccent: tintedTheme.background,
+        selection: '#388bfd40'
       },
-      allowTransparency: false,
+      allowTransparency: this.settings.bgOpacity < 100,
       scrollback: 10000
     });
 
@@ -259,7 +431,6 @@ class TerminalApp {
     term.loadAddon(fitAddon);
     term.loadAddon(new WebLinksAddon());
 
-    // Create PTY process
     const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
     const ptyProcess = pty.spawn(shell, [], {
       name: 'xterm-256color',
@@ -268,81 +439,75 @@ class TerminalApp {
       cwd: cwd || process.env.HOME || os.homedir(),
       env: {
         ...process.env,
-        PROMPT_COMMAND: 'history -a', // Force bash to append to history file immediately
+        PROMPT_COMMAND: 'history -a',
         HISTFILE: path.join(os.homedir(), '.bash_history'),
         HISTFILESIZE: 10000,
         HISTSIZE: 10000
       }
     });
 
-    // Listen for data from PTY and write to terminal
+    const terminalId = Date.now() + Math.random();
+    this.lastOutputTime[terminalId] = Date.now();
+    this.hasOutputSinceCheck[terminalId] = false;
+
     ptyProcess.onData((data) => {
       term.write(data);
+      this.lastOutputTime[terminalId] = Date.now();
+      this.hasOutputSinceCheck[terminalId] = true;
     });
 
-    // Listen for terminal input and write to PTY
     term.onData((data) => {
       ptyProcess.write(data);
       
-      // Track commands for history (detect Enter key)
       if (data === '\r') {
         this.trackCommand(term);
       }
     });
 
-    // Handle terminal resize
     term.onResize(({ cols, rows }) => {
       ptyProcess.resize(cols, rows);
     });
 
-    return { term, fitAddon, ptyProcess };
+    return { term, fitAddon, ptyProcess, splitParent, terminalId };
   }
 
   trackCommand(term) {
-    // Use a simpler approach - capture typed commands
-    const tab = this.tabs.find(t => t.term === term);
-    if (!tab) return;
-    
-    // Commands will be tracked via shell history file
-    // Read last command from bash history
-    const fs = require('fs');
-    const historyPath = path.join(os.homedir(), '.bash_history');
-    
-    try {
-      if (fs.existsSync(historyPath)) {
-        const historyContent = fs.readFileSync(historyPath, 'utf8');
-        const lines = historyContent.trim().split('\n');
-        const lastCommand = lines[lines.length - 1];
-        
-        if (lastCommand && lastCommand.trim() && !this.commandHistory.includes(lastCommand)) {
-          this.commandHistory = [lastCommand, ...this.commandHistory.filter(cmd => cmd !== lastCommand)].slice(0, 50);
-          
-          if (this.showHistory) {
-            this.renderHistorySidebar();
-          }
-        }
-      }
-    } catch (err) {
-      // Silently fail if we can't read history
-    }
+    // Commands tracked via history file monitoring
   }
 
   addTab() {
     const tabId = this.nextTabId++;
     const cwd = this.tabs.length > 0 ? this.tabs[this.tabs.length - 1].cwd : os.homedir();
     
-    const { term, fitAddon, ptyProcess } = this.createTerminal(cwd);
+    const { term, fitAddon, ptyProcess, terminalId } = this.createTerminal(cwd);
     
     const tab = {
       id: tabId,
-      name: `Terminal ${tabId}`,
+      name: `${path.basename(cwd)}:bash`,
       term: term,
       fitAddon: fitAddon,
       ptyProcess: ptyProcess,
       element: null,
       terminalElement: null,
-      cwd: cwd
+      cwd: cwd,
+      splits: [],
+      terminalId: terminalId
     };
+    
+    // Monitor cwd changes for tab name
+    setInterval(() => {
+      try {
+        const procPath = `/proc/${ptyProcess.pid}/cwd`;
+        if (fs.existsSync(procPath)) {
+          const newCwd = fs.readlinkSync(procPath);
+          if (newCwd !== tab.cwd) {
+            tab.cwd = newCwd;
+            tab.name = `${path.basename(newCwd)}:bash`;
+            this.renderTabs();
+          }
+        }
+      } catch (err) {}
+    }, 2000);
     
     this.tabs.push(tab);
     this.renderTabs();
@@ -352,10 +517,13 @@ class TerminalApp {
   renderTabs() {
     this.tabsContainer.innerHTML = '';
     
+    const maxTabWidth = this.tabs.length > 5 ? 150 : 200;
+    
     this.tabs.forEach(tab => {
       const tabEl = document.createElement('div');
-      tabEl.className = `tab ${tab.id === this.activeTab ? 'active' : ''}`;
+      tabEl.className = `tab ${tab.id === this.activeTab ? 'active' : ''} color`;
       tabEl.dataset.tabId = tab.id;
+      tabEl.style.maxWidth = `${maxTabWidth}px`;
       
       const icon = document.createElement('span');
       icon.className = 'tab-icon';
@@ -363,8 +531,16 @@ class TerminalApp {
       tabEl.appendChild(icon);
       
       const span = document.createElement('span');
+      span.className = 'tab-label';
       span.textContent = tab.name;
       tabEl.appendChild(span);
+      
+      const detachBtn = document.createElement('button');
+      detachBtn.className = 'detach-tab';
+      detachBtn.innerHTML = '⧉';
+      detachBtn.title = 'Detach tab to new window';
+      detachBtn.dataset.tabId = tab.id;
+      tabEl.appendChild(detachBtn);
       
       if (this.tabs.length > 1) {
         const closeBtn = document.createElement('button');
@@ -373,14 +549,6 @@ class TerminalApp {
         closeBtn.dataset.tabId = tab.id;
         tabEl.appendChild(closeBtn);
       }
-      
-      // Add detach button
-/*       const detachBtn = document.createElement('button');
-      detachBtn.className = 'detach-tab';
-      detachBtn.innerHTML = '⧉';
-      detachBtn.title = 'Detach tab to new window';
-      detachBtn.dataset.tabId = tab.id;
-      tabEl.appendChild(detachBtn); */
       
       this.tabsContainer.appendChild(tabEl);
       tab.element = tabEl;
@@ -399,7 +567,6 @@ class TerminalApp {
     const tab = this.tabs.find(t => t.id === tabId);
     if (!tab) return;
     
-    // Hide all terminals
     this.tabs.forEach(t => {
       if (t.terminalElement) {
         t.terminalElement.style.display = 'none';
@@ -409,29 +576,95 @@ class TerminalApp {
       }
     });
     
-    // Show selected terminal
     if (!tab.terminalElement) {
       tab.terminalElement = document.createElement('div');
       tab.terminalElement.className = 'terminal-wrapper';
-      this.terminalArea.appendChild(tab.terminalElement);
-      tab.term.open(tab.terminalElement);
       
-      // Fit terminal to container
+      // Check if this tab has splits
+      if (tab.splits.length > 0) {
+        tab.terminalElement.style.display = 'flex';
+        tab.terminalElement.style.flexDirection = tab.splitDirection === 'horizontal' ? 'column' : 'row';
+        tab.terminalElement.style.width = '100%';
+        tab.terminalElement.style.height = '100%';
+        
+        tab.splits.forEach((split, index) => {
+          const splitDiv = document.createElement('div');
+          splitDiv.className = 'split-pane';
+          splitDiv.style.flex = '1';
+          splitDiv.style.overflow = 'hidden';
+          splitDiv.style.position = 'relative';
+          splitDiv.tabIndex = 0;
+          split.term.open(splitDiv);
+          splitDiv.addEventListener('click', () => {
+            this.focusedSplitIndex = index;
+          });
+          
+          // Track focus on splits
+      /*     split.term.onDidFocus(() => {
+            this.focusedSplitIndex = index;
+          }); */
+
+          tab.terminalElement.appendChild(splitDiv);
+          
+          setTimeout(() => split.fitAddon.fit(), 0);
+        });
+      } else {
+        tab.terminalElement.style.width = '100%';
+        tab.terminalElement.style.height = '100%';
+        tab.term.open(tab.terminalElement);
+   /*      tab.term.onDidFocus(() => {
+          this.focusedSplitIndex = 0;
+        }); */
+      }
+      
+      this.terminalArea.appendChild(tab.terminalElement);
+      
+      // Enable drag and drop
+      tab.terminalElement.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      
+      tab.terminalElement.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+          const filePaths = Array.from(files).map(f => `"${f.path}"`).join(' ');
+          if (tab.splits.length > 0) {
+            tab.splits[this.focusedSplitIndex].ptyProcess.write(filePaths);
+          } else {
+            tab.ptyProcess.write(filePaths);
+          }
+        }
+      });
+      
       setTimeout(() => {
-        tab.fitAddon.fit();
+        if (tab.splits.length > 0) {
+          tab.splits.forEach(s => s.fitAddon.fit());
+        } else {
+          tab.fitAddon.fit();
+        }
       }, 0);
     }
     
-    tab.terminalElement.style.display = 'block';
+    tab.terminalElement.style.display = tab.splits.length > 0 ? 'flex' : 'block';
     tab.element.classList.add('active');
     this.activeTab = tabId;
     
-    // Focus terminal
-    tab.term.focus();
+    if (tab.splits.length > 0) {
+      tab.splits[this.focusedSplitIndex || 0].term.focus();
+    } else {
+      tab.term.focus();
+    }
     
-    // Refit on window resize
     const resizeHandler = () => {
-      tab.fitAddon.fit();
+      if (tab.splits.length > 0) {
+        tab.splits.forEach(s => s.fitAddon.fit());
+      } else {
+        tab.fitAddon.fit();
+      }
     };
     window.removeEventListener('resize', tab.resizeHandler);
     tab.resizeHandler = resizeHandler;
@@ -445,32 +678,64 @@ class TerminalApp {
     const tab = this.tabs[tabIndex];
     
     if (tab) {
-      // Kill PTY process
       tab.ptyProcess.kill();
-      
-      // Dispose terminal
       tab.term.dispose();
       
-      // Remove terminal element
       if (tab.terminalElement) {
         tab.terminalElement.remove();
       }
       
-      // Remove resize handler
       if (tab.resizeHandler) {
         window.removeEventListener('resize', tab.resizeHandler);
       }
       
-      // Remove from tabs array
       this.tabs.splice(tabIndex, 1);
       
-      // Switch to another tab
       if (this.activeTab === tabId) {
         const newActiveTab = this.tabs[Math.max(0, tabIndex - 1)];
         this.switchTab(newActiveTab.id);
       }
       
       this.renderTabs();
+    }
+  }
+
+  detachTab(tabId) {
+    const tab = this.tabs.find(t => t.id === tabId);
+    if (!tab || this.tabs.length === 1) return;
+    
+    if (typeof nw !== 'undefined') {
+      const win = nw.Window.open('index.html', {
+        width: 1000,
+        height: 600,
+        title: tab.name
+      });
+      
+      win.on('loaded', () => {
+        this.closeTab(tabId);
+      });
+    } else if (typeof require !== 'undefined') {
+      try {
+        const { BrowserWindow } = require('electron').remote || require('@electron/remote');
+        const newWin = new BrowserWindow({
+          width: 1000,
+          height: 600,
+          autoHideMenuBar: true,
+          webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: false
+          }
+        });
+        
+        newWin.loadFile('index.html');
+        newWin.setMenuBarVisibility(false);
+        
+        setTimeout(() => {
+          this.closeTab(tabId);
+        }, 500);
+      } catch (err) {
+        console.error('Detach not supported');
+      }
     }
   }
 
@@ -490,32 +755,11 @@ class TerminalApp {
     });
   }
 
-  executeCommand(command) {
-    const tab = this.tabs.find(t => t.id === this.activeTab);
-    if (!tab) return;
-    
-    // Auto-convert pacman to sudo pacman
-    let processedCommand = command.trim();
-    if (processedCommand.startsWith('pacman ') && !processedCommand.startsWith('sudo ')) {
-      processedCommand = 'sudo ' + processedCommand;
-    }
-    
-    // Send command to PTY
-    tab.ptyProcess.write(processedCommand + '\r');
-    
-    // Add to history
-    this.commandHistory = [processedCommand, ...this.commandHistory.filter(cmd => cmd !== processedCommand)].slice(0, 50);
-    
-    if (this.showHistory) {
-      this.renderHistorySidebar();
-    }
-  }
-
   attachGlobalEvents() {
     // Tab switching
     this.tabsContainer.addEventListener('click', (e) => {
       const tab = e.target.closest('.tab');
-      if (tab && !e.target.classList.contains('close-tab')) {
+      if (tab && !e.target.classList.contains('close-tab') && !e.target.classList.contains('detach-tab')) {
         const tabId = parseInt(tab.dataset.tabId);
         this.switchTab(tabId);
       }
@@ -552,14 +796,13 @@ class TerminalApp {
       this.historySidebar.style.display = this.showHistory ? 'flex' : 'none';
       this.historyToggle.classList.toggle('active', this.showHistory);
       
-      // Hide settings if showing history
       if (this.showHistory) {
         this.settingsPanel.style.display = 'none';
-        this.settingsToggle.classList.remove('active');
+        this.aliasPanel.style.display = 'none';
+        this.mainMenu.style.display = 'none';
         this.renderHistorySidebar();
       }
       
-      // Refit terminal when sidebar toggles
       const tab = this.tabs.find(t => t.id === this.activeTab);
       if (tab) {
         setTimeout(() => {
@@ -569,77 +812,136 @@ class TerminalApp {
       }
     });
 
-    // Toggle settings
-    this.settingsToggle.addEventListener('click', () => {
-      const isVisible = this.settingsPanel.style.display === 'flex';
-      this.settingsPanel.style.display = isVisible ? 'none' : 'flex';
-      this.settingsToggle.classList.toggle('active', !isVisible);
+    // Menu toggle
+    this.menuToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isVisible = this.mainMenu.style.display === 'block';
+      this.mainMenu.style.display = isVisible ? 'none' : 'block';
       
-      // Hide history if showing settings
       if (!isVisible) {
-        this.historySidebar.style.display = 'none';
-        this.historyToggle.classList.remove('active');
-        this.showHistory = false;
-      }
-      
-      // Refit terminal
-      const tab = this.tabs.find(t => t.id === this.activeTab);
-      if (tab) {
-        setTimeout(() => {
-          tab.fitAddon.fit();
-          tab.term.focus();
-        }, 100);
+        const rect = this.menuToggle.getBoundingClientRect();
+        this.mainMenu.style.left = (rect.left - 150) + 'px';
+        this.mainMenu.style.top = (rect.bottom + 5) + 'px';
       }
     });
 
-    // Font size slider
-    const fontSizeInput = document.getElementById('font-size');
-    fontSizeInput.addEventListener('input', (e) => {
-      document.getElementById('font-size-value').textContent = e.target.value;
+    // Menu actions
+    this.mainMenu.addEventListener('click', (e) => {
+      const action = e.target.closest('.menu-item')?.dataset.action;
+      if (action) {
+        this.handleMenuAction(action);
+        this.mainMenu.style.display = 'none';
+      }
     });
 
-    // Apply settings
-    document.getElementById('apply-settings').addEventListener('click', () => {
-      this.applySettings();
-    });
-
-    // Clear console
+    // Clear console and kill process
     this.clearConsoleBtn.addEventListener('click', () => {
       const tab = this.tabs.find(t => t.id === this.activeTab);
+      let currTab=null;
       if (tab) {
-        tab.term.clear();
-        tab.term.focus();
+        if (tab.splits.length > 0) {
+          currTab=tab.splits[this.focusedSplitIndex || 0];
+        }
+        else{
+          currTab=tab;
+        }
+        currTab.ptyProcess.write('\x03'); // Ctrl+C
+        setTimeout(() => {
+          currTab.term.clear();
+          currTab.term.focus();
+        }, 100);
       }
     });
 
-    // Clear input (send Ctrl+U to clear current line)
+    // Clear input
     this.clearInputBtn.addEventListener('click', () => {
       const tab = this.tabs.find(t => t.id === this.activeTab);
+      let currTab=null;
       if (tab) {
-        tab.ptyProcess.write('\x15'); // Ctrl+U
-        tab.term.focus();
+        if (tab.splits.length > 0) {
+          currTab=tab.splits[this.focusedSplitIndex || 0];
+        }
+        else{
+          currTab=tab;
+        }
+        currTab.ptyProcess.write('\x15'); // Ctrl+U
+        currTab.term.focus();
       }
     });
 
-    // Kill process (send Ctrl+C)
+    // Kill process
     this.killProcessBtn.addEventListener('click', () => {
       const tab = this.tabs.find(t => t.id === this.activeTab);
+      let currTab=null;
       if (tab) {
-        tab.ptyProcess.write('\x03'); // Ctrl+C
-        tab.term.focus();
+        if (tab.splits.length > 0) {
+          currTab=tab.splits[this.focusedSplitIndex || 0];
+        }
+        else{
+          currTab=tab;
+        }
+        currTab.ptyProcess.write('\x03'); // Ctrl+C
       }
     });
 
-    // Execute from history (left click)
+    // Password lock
+    this.passwordLockBtn.addEventListener('click', () => {
+      if (this.savedPassword) {
+        const tab = this.tabs.find(t => t.id === this.activeTab);
+        if (tab) {
+          if (tab.splits.length > 0) {
+            tab.splits[this.focusedSplitIndex || 0].ptyProcess.write(this.savedPassword + '\r');
+          } else {
+            tab.ptyProcess.write(this.savedPassword + '\r');
+          }
+        }
+      } else {
+        document.getElementById('password-overlay').style.display = 'flex';
+      }
+    });
+
+    // Right-click password lock to change password
+    this.passwordLockBtn.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (this.savedPassword) {
+        document.getElementById('password-overlay').style.display = 'flex';
+        document.getElementById('password-input').value = '';
+      }
+    });
+
+    // Password dialog
+    document.getElementById('save-password').addEventListener('click', () => {
+      const pwd = document.getElementById('password-input').value;
+      if (pwd) {
+        this.savedPassword = pwd;
+        this.passwordLockBtn.classList.add('active');
+      }
+      document.getElementById('password-overlay').style.display = 'none';
+      document.getElementById('password-input').value = '';
+    });
+
+    document.getElementById('cancel-password').addEventListener('click', () => {
+      document.getElementById('password-overlay').style.display = 'none';
+      document.getElementById('password-input').value = '';
+    });
+
+    // Execute from history
     this.historyList.addEventListener('click', (e) => {
       const historyItem = e.target.closest('.history-item');
       if (historyItem) {
         const command = historyItem.dataset.command;
-        this.executeCommand(command);
+        const tab = this.tabs.find(t => t.id === this.activeTab);
+        if (tab) {
+          if (tab.splits.length > 0) {
+            tab.splits[this.focusedSplitIndex || 0].ptyProcess.write(command + '\r');
+          } else {
+            tab.ptyProcess.write(command + '\r');
+          }
+        }
       }
     });
 
-    // Context menu on history items (right click)
+    // History context menu
     this.historyList.addEventListener('contextmenu', (e) => {
       const historyItem = e.target.closest('.history-item');
       if (historyItem) {
@@ -656,7 +958,6 @@ class TerminalApp {
       
       const selection = tab.term.getSelection().trim();
       
-      // Always show context menu in terminal area
       if (e.target.closest('.terminal-area')) {
         e.preventDefault();
         this.selectedText = selection;
@@ -664,12 +965,12 @@ class TerminalApp {
       }
     });
 
-    // Close context menu on any click
+    // Close menus on click
     document.addEventListener('click', (e) => {
-      // Don't close if clicking inside context menu
-      if (!e.target.closest('.context-menu')) {
+      if (!e.target.closest('.context-menu') && !e.target.closest('.dropdown-menu')) {
         this.hideContextMenu();
         this.hideHistoryContextMenu();
+        this.mainMenu.style.display = 'none';
       }
     });
 
@@ -677,7 +978,7 @@ class TerminalApp {
     this.contextMenu.addEventListener('click', (e) => {
       const action = e.target.dataset.action;
       if (action) {
-        e.stopPropagation(); // Prevent document click from firing
+        e.stopPropagation();
         this.handleContextAction(action);
       }
     });
@@ -691,17 +992,146 @@ class TerminalApp {
       }
     });
 
-    // Keep terminal focused when clicking toolbar buttons
+    // Settings - auto-save on change
+    document.getElementById('font-family').addEventListener('change', () => {
+      this.settings.fontFamily = document.getElementById('font-family').value;
+      this.saveSettings();
+      this.applySettings();
+    });
+
+    document.getElementById('font-size').addEventListener('input', (e) => {
+      document.getElementById('font-size-value').textContent = e.target.value;
+      this.settings.fontSize = parseInt(e.target.value);
+      this.saveSettings();
+      this.applySettings();
+    });
+
+    document.getElementById('theme').addEventListener('change', () => {
+      this.settings.theme = document.getElementById('theme').value;
+      this.saveSettings();
+      this.applySettings();
+    });
+
+    document.getElementById('color-hue').addEventListener('input', (e) => {
+      document.getElementById('hue-value').textContent = e.target.value;
+      this.settings.colorHue = parseInt(e.target.value);
+      this.saveSettings();
+      this.applySettings();
+    });
+
+    document.getElementById('brightness').addEventListener('input', (e) => {
+      document.getElementById('brightness-value').textContent = e.target.value;
+      this.settings.brightness = parseInt(e.target.value);
+      this.saveSettings();
+      this.applySettings();
+    });
+
+    document.getElementById('bg-opacity').addEventListener('input', (e) => {
+      document.getElementById('opacity-value').textContent = e.target.value;
+      this.settings.bgOpacity = parseInt(e.target.value);
+      this.saveSettings();
+      this.applySettings();
+    });
+
+    document.getElementById('beep-on-idle').addEventListener('change', (e) => {
+      this.settings.beepOnIdle = e.target.checked;
+      this.saveSettings();
+    });
+
+    document.getElementById('show-input-box').addEventListener('change', (e) => {
+      this.settings.showInputBox = e.target.checked;
+      this.saveSettings();
+      this.toggleInputBox(e.target.checked);
+      this.historySidebar.classList.toggle("input-on");
+      this.terminalArea.classList.toggle("input-on");
+    });
+
+    // Close buttons for panels
+    document.getElementById('close-settings').addEventListener('click', () => {
+      this.settingsPanel.style.display = 'none';
+      const tab = this.tabs.find(t => t.id === this.activeTab);
+      if (tab) {
+        setTimeout(() => {
+          if (tab.splits.length > 0) {
+            tab.splits.forEach(s => s.fitAddon.fit());
+          } else {
+            tab.fitAddon.fit();
+          }
+          (tab.splits[0]?.term || tab.term).focus();
+        }, 100);
+      }
+    });
+
+    document.getElementById('close-aliases').addEventListener('click', () => {
+      this.aliasPanel.style.display = 'none';
+      const tab = this.tabs.find(t => t.id === this.activeTab);
+      if (tab) {
+        setTimeout(() => {
+          if (tab.splits.length > 0) {
+            tab.splits.forEach(s => s.fitAddon.fit());
+          } else {
+            tab.fitAddon.fit();
+          }
+          (tab.splits[0]?.term || tab.term).focus();
+        }, 100);
+      }
+    });
+
+    // Alias management
+    document.getElementById('add-alias').addEventListener('click', () => {
+      this.addAliasField();
+    });
+
+    document.getElementById('save-aliases').addEventListener('click', () => {
+      this.saveAliases();
+    });
+
+    // Bottom input box
+    const bottomInput = document.getElementById('bottom-input');
+    let lastInputValue = '';
+    
+    bottomInput.addEventListener('input', (e) => {
+      const tab = this.tabs.find(t => t.id === this.activeTab);
+      if (!tab) return;
+      
+      const newValue = e.target.value;
+      const ptyProcess = tab.splits.length > 0 ? tab.splits[this.focusedSplitIndex || 0].ptyProcess : tab.ptyProcess;
+      
+      // Clear terminal line and type new value
+      if (lastInputValue.length > 0) {
+        ptyProcess.write('\x15'); // Ctrl+U to clear line
+      }
+      ptyProcess.write(newValue);
+      lastInputValue = newValue;
+    });
+
+    bottomInput.addEventListener('keydown', (e) => {
+      const tab = this.tabs.find(t => t.id === this.activeTab);
+      if (!tab) return;
+      
+      const ptyProcess = tab.splits.length > 0 ? tab.splits[this.focusedSplitIndex || 0].ptyProcess : tab.ptyProcess;
+      
+      if (e.key === 'Enter') {
+        ptyProcess.write('\r');
+        bottomInput.value = '';
+        lastInputValue = '';
+      } else if (e.key === 'Tab') {
+        e.preventDefault();
+        ptyProcess.write('\t');
+      }
+    });
+
+    // Keep terminal focused
     document.addEventListener('mousedown', (e) => {
       const isToolbarBtn = e.target.closest('.toolbar-btn') || 
                           e.target.closest('.history-toggle') ||
                           e.target.closest('.add-tab') ||
-                          e.target.closest('.close-tab');
+                          e.target.closest('.close-tab') ||
+                          e.target.closest('.detach-tab');
       
       if (isToolbarBtn) {
-        e.preventDefault(); // Prevent focus loss
+        e.preventDefault();
         
-        // Re-focus terminal after button action
         setTimeout(() => {
           const tab = this.tabs.find(t => t.id === this.activeTab);
           if (tab) {
@@ -712,26 +1142,295 @@ class TerminalApp {
     });
   }
 
+  handleMenuAction(action) {
+    switch (action) {
+      case 'new-window':
+        this.openNewWindow();
+        break;
+      case 'control-aliases':
+        this.showAliasManager();
+        break;
+      case 'settings':
+        this.showSettings();
+        break;
+    }
+  }
+
+  openNewWindow() {
+    if (typeof nw !== 'undefined') {
+      nw.Window.open('index.html', {
+        width: 1200,
+        height: 800
+      });
+    } else if (typeof require !== 'undefined') {
+      try {
+        const { BrowserWindow } = require('electron').remote || require('@electron/remote');
+        const newWin = new BrowserWindow({
+          width: 1200,
+          height: 800,
+          autoHideMenuBar: true,
+          webPreferences: {
+            nodeIntegration: true,
+            contextIsolation: false
+          }
+        });
+        
+        newWin.loadFile('index.html');
+        newWin.setMenuBarVisibility(false);
+      } catch (err) {
+        console.error('New window not supported');
+      }
+    }
+  }
+
+  showSettings() {
+    this.settingsPanel.style.display = 'block';
+    this.settingsPanel.style.position = 'fixed';
+    this.settingsPanel.style.top = '42px';
+    this.settingsPanel.style.right = '0';
+    this.settingsPanel.style.bottom = '0';
+    this.settingsPanel.style.width = '100%';
+    this.settingsPanel.style.zIndex = '100';
+    
+    this.historySidebar.style.display = 'none';
+    this.aliasPanel.style.display = 'none';
+    this.showHistory = false;
+    this.historyToggle.classList.remove('active');
+  }
+
+  showAliasManager() {
+    this.aliasPanel.style.display = 'block';
+    this.aliasPanel.style.position = 'fixed';
+    this.aliasPanel.style.top = '42px';
+    this.aliasPanel.style.right = '0';
+    this.aliasPanel.style.bottom = '0';
+    this.aliasPanel.style.width = '100%';
+    this.aliasPanel.style.zIndex = '100';
+    
+    this.historySidebar.style.display = 'none';
+    this.settingsPanel.style.display = 'none';
+    this.showHistory = false;
+    this.historyToggle.classList.remove('active');
+    
+    this.loadAliases();
+  }
+
+  loadAliases() {
+    const bashrcPath = path.join(os.homedir(), '.bashrc');
+    const aliasList = document.getElementById('alias-list');
+    aliasList.innerHTML = '';
+    
+    try {
+      if (fs.existsSync(bashrcPath)) {
+        const content = fs.readFileSync(bashrcPath, 'utf8');
+        const lines = content.split('\n');
+        
+        lines.forEach((line, index) => {
+          const match = line.match(/^\s*alias\s+([^=]+)=['"](.+)['"]\s*$/);
+          if (match) {
+            this.addAliasField(match[1].trim(), match[2].trim(), index);
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Error reading .bashrc:', err);
+    }
+    
+    if (aliasList.children.length === 0) {
+      this.addAliasField();
+    }
+  }
+
+  addAliasField(name = '', command = '', lineIndex = -1) {
+    const aliasList = document.getElementById('alias-list');
+    
+    const aliasItem = document.createElement('div');
+    aliasItem.className = 'alias-item';
+    aliasItem.dataset.lineIndex = lineIndex;
+    
+    aliasItem.innerHTML = `
+      <input type="text" class="alias-name" placeholder="Alias name" value="${name}">
+      <input type="text" class="alias-command" placeholder="Command" value="${command}">
+      <button class="remove-alias">✕</button>
+    `;
+    
+    aliasItem.querySelector('.remove-alias').addEventListener('click', () => {
+      aliasItem.remove();
+    });
+    
+    aliasList.appendChild(aliasItem);
+  }
+
+  saveAliases() {
+    const bashrcPath = path.join(os.homedir(), '.bashrc');
+    
+    try {
+      let content = '';
+      if (fs.existsSync(bashrcPath)) {
+        content = fs.readFileSync(bashrcPath, 'utf8');
+      }
+      
+      const lines = content.split('\n');
+      const newLines = [];
+      
+      // Remove old aliases
+      lines.forEach(line => {
+        if (!line.match(/^\s*alias\s+/)) {
+          newLines.push(line);
+        }
+      });
+      
+      // Add new aliases
+      const aliasItems = document.querySelectorAll('.alias-item');
+      aliasItems.forEach(item => {
+        const name = item.querySelector('.alias-name').value.trim();
+        const command = item.querySelector('.alias-command').value.trim();
+        
+        if (name && command) {
+          newLines.push(`alias ${name}="${command}"`);
+        }
+      });
+      
+      fs.writeFileSync(bashrcPath, newLines.join('\n'), 'utf8');
+      
+      // Reload bash
+      const tab = this.tabs.find(t => t.id === this.activeTab);
+      if (tab) {
+        tab.ptyProcess.write('source ~/.bashrc\r');
+      }
+      
+      alert('Aliases saved! Restart bash or run: source ~/.bashrc');
+    } catch (err) {
+      alert('Error saving aliases: ' + err.message);
+    }
+  }
+
+  toggleInputBox(show) {
+    const inputBoxContainer = document.getElementById('input-box-container');
+    const terminalArea = document.getElementById('terminal-area');
+    
+    if (show) {
+      inputBoxContainer.style.display = 'block';
+      terminalArea.style.bottom = '40px';
+    } else {
+      inputBoxContainer.style.display = 'none';
+      terminalArea.style.bottom = '0';
+    }
+    
+    // Refit all terminals
+    this.tabs.forEach(tab => {
+      if (tab.splits.length > 0) {
+        setTimeout(() => tab.splits.forEach(s => s.fitAddon.fit()), 100);
+      } else if (tab.fitAddon) {
+        setTimeout(() => tab.fitAddon.fit(), 100);
+      }
+    });
+  }
+
+  applySettings() {
+    const currentTheme = this.themes[this.settings.theme];
+    const hue = this.settings.colorHue;
+    const brightness = this.settings.brightness;
+    
+    const tintedTheme = {};
+    Object.keys(currentTheme).forEach(key => {
+      tintedTheme[key] = this.adjustColorWithHueAndBrightness(currentTheme[key], hue, brightness);
+    });
+    
+    this.tabs.forEach(tab => {
+      // Update main terminal
+      tab.term.options.fontFamily = `"${this.settings.fontFamily}", "Courier New", monospace`;
+      tab.term.options.fontSize = this.settings.fontSize;
+      tab.term.options.allowTransparency = this.settings.bgOpacity < 100;
+      tab.term.options.theme = {
+        ...tintedTheme,
+        cursorAccent: tintedTheme.background,
+        selection: '#388bfd40'
+      };
+      
+      // Update split terminals
+      if (tab.splits.length > 0) {
+        tab.splits.forEach(split => {
+          split.term.options.fontFamily = `"${this.settings.fontFamily}", "Courier New", monospace`;
+          split.term.options.fontSize = this.settings.fontSize;
+          split.term.options.allowTransparency = this.settings.bgOpacity < 100;
+          split.term.options.theme = {
+            ...tintedTheme,
+            cursorAccent: tintedTheme.background,
+            selection: '#388bfd40'
+          };
+        });
+      }
+      
+      setTimeout(() => {
+        if (tab.splits.length > 0) {
+          tab.splits.forEach(s => s.fitAddon.fit());
+        } else {
+          tab.fitAddon.fit();
+        }
+      }, 100);
+    });
+    
+    this.applyThemeToUI();
+  }
+
+  executeCommand(command) {
+    if (!command.trim()) return;
+
+    let processedCommand = command.trim();
+    
+    // Auto-add sudo - check if command starts with package manager
+    const needsSudo = [
+      'pacman ',
+      'apt-get ',
+      'apt ',
+      'dnf '
+    ];
+    
+    for (const cmd of needsSudo) {
+      if (processedCommand.startsWith(cmd) && !processedCommand.startsWith('sudo ')) {
+        processedCommand = 'sudo ' + processedCommand;
+        break;
+      }
+    }
+
+    const tab = this.tabs.find(t => t.id === this.activeTab);
+    if (!tab) return;
+    
+    tab.commandHistory = tab.commandHistory || [];
+    tab.commandHistory.push(processedCommand);
+    tab.historyIndex = -1;
+    
+    this.commandHistory = [processedCommand, ...this.commandHistory.filter(cmd => cmd !== processedCommand)].slice(0, 50);
+    
+    if (this.showHistory) {
+      this.renderHistorySidebar();
+    }
+
+    // Send to focused split or main terminal
+    if (tab.splits.length > 0) {
+      tab.splits[this.focusedSplitIndex || 0].ptyProcess.write(processedCommand + '\r');
+      tab.splits[this.focusedSplitIndex || 0].term.focus();
+    } else {
+      tab.ptyProcess.write(processedCommand + '\r');
+      tab.term.focus();
+    }
+  }
+
   showContextMenu(x, y, emptyClick = false) {
-    // Hide/show package manager options based on whether text is selected
     const packageItems = this.contextMenu.querySelectorAll('[data-action="pacman"], [data-action="yay"], [data-action="apt"], [data-action="dnf"], [data-action="search"]');
     packageItems.forEach(item => {
       item.style.display = emptyClick ? 'none' : 'block';
     });
     
-    // Show/hide dividers
-    const dividers = this.contextMenu.querySelectorAll('.context-divider');
-    dividers.forEach((div, idx) => {
-      if (idx === 1 && emptyClick) {
-        div.style.display = 'none';
-      } else if (idx === 2 && emptyClick) {
+    this.contextMenu.querySelectorAll('.context-divider').forEach((div, idx) => {
+      if ((idx === 2 || idx === 3) && emptyClick) {
         div.style.display = 'none';
       } else {
         div.style.display = 'block';
       }
     });
     
-    // Get actual menu dimensions
     this.contextMenu.style.display = 'block';
     this.contextMenu.style.left = '0px';
     this.contextMenu.style.top = '0px';
@@ -743,60 +1442,8 @@ class TerminalApp {
       const windowWidth = window.innerWidth;
       const windowHeight = window.innerHeight;
       
-      let adjustedX = x;
-      let adjustedY = y;
-      
-      if (x + menuWidth > windowWidth) {
-        adjustedX = windowWidth - menuWidth - 5;
-      }
-      
-      if (y + menuHeight > windowHeight) {
-        adjustedY = windowHeight - menuHeight - 5;
-      }
-      
-      if (adjustedX < 5) {
-        adjustedX = 5;
-      }
-      
-      if (adjustedY < 5) {
-        adjustedY = 5;
-      }
-      
-      this.contextMenu.style.left = adjustedX + 'px';
-      this.contextMenu.style.top = adjustedY + 'px';
-    });
-    
-    // Wait for next frame to get actual dimensions
-    requestAnimationFrame(() => {
-      const menuRect = this.contextMenu.getBoundingClientRect();
-      const menuWidth = menuRect.width;
-      const menuHeight = menuRect.height;
-      const windowWidth = window.innerWidth;
-      const windowHeight = window.innerHeight;
-      
-      // Calculate position to keep menu fully visible
-      let adjustedX = x;
-      let adjustedY = y;
-      
-      // Check right edge
-      if (x + menuWidth > windowWidth) {
-        adjustedX = windowWidth - menuWidth - 5;
-      }
-      
-      // Check bottom edge
-      if (y + menuHeight > windowHeight) {
-        adjustedY = windowHeight - menuHeight - 5;
-      }
-      
-      // Check left edge
-      if (adjustedX < 5) {
-        adjustedX = 5;
-      }
-      
-      // Check top edge
-      if (adjustedY < 5) {
-        adjustedY = 5;
-      }
+      let adjustedX = Math.max(5, Math.min(x, windowWidth - menuWidth - 5));
+      let adjustedY = Math.max(5, Math.min(y, windowHeight - menuHeight - 5));
       
       this.contextMenu.style.left = adjustedX + 'px';
       this.contextMenu.style.top = adjustedY + 'px';
@@ -808,7 +1455,6 @@ class TerminalApp {
   }
 
   showHistoryContextMenu(x, y) {
-    // Get actual menu dimensions
     this.historyContextMenu.style.display = 'block';
     this.historyContextMenu.style.left = '0px';
     this.historyContextMenu.style.top = '0px';
@@ -820,24 +1466,8 @@ class TerminalApp {
       const windowWidth = window.innerWidth;
       const windowHeight = window.innerHeight;
       
-      let adjustedX = x;
-      let adjustedY = y;
-      
-      if (x + menuWidth > windowWidth) {
-        adjustedX = windowWidth - menuWidth - 5;
-      }
-      
-      if (y + menuHeight > windowHeight) {
-        adjustedY = windowHeight - menuHeight - 5;
-      }
-      
-      if (adjustedX < 5) {
-        adjustedX = 5;
-      }
-      
-      if (adjustedY < 5) {
-        adjustedY = 5;
-      }
+      let adjustedX = Math.max(5, Math.min(x, windowWidth - menuWidth - 5));
+      let adjustedY = Math.max(5, Math.min(y, windowHeight - menuHeight - 5));
       
       this.historyContextMenu.style.left = adjustedX + 'px';
       this.historyContextMenu.style.top = adjustedY + 'px';
@@ -846,31 +1476,6 @@ class TerminalApp {
 
   hideHistoryContextMenu() {
     this.historyContextMenu.style.display = 'none';
-  }
-
-  handleHistoryContextAction(action) {
-    const tab = this.tabs.find(t => t.id === this.activeTab);
-    if (!tab || !this.selectedHistoryCommand) return;
-    
-    switch (action) {
-      case 'execute':
-        this.executeCommand(this.selectedHistoryCommand);
-        break;
-      case 'copy-to-input':
-        // Write command to terminal without executing
-        tab.ptyProcess.write(this.selectedHistoryCommand);
-        tab.term.focus();
-        break;
-      case 'copy':
-        if (typeof nw !== 'undefined') {
-          nw.Clipboard.get().set(this.selectedHistoryCommand, 'text');
-        } else {
-          navigator.clipboard.writeText(this.selectedHistoryCommand);
-        }
-        break;
-    }
-    
-    this.hideHistoryContextMenu();
   }
 
   handleContextAction(action) {
@@ -895,8 +1500,19 @@ class TerminalApp {
           });
         }
         break;
+      case 'delete-selection':
+        if (this.selectedText) {
+          tab.ptyProcess.write('\x08'.repeat(this.selectedText.length));
+        }
+        break;
       case 'open-folder':
         this.openCurrentFolder(tab);
+        break;
+      case 'split-horizontal':
+        this.splitTerminal(tab, 'horizontal');
+        break;
+      case 'split-vertical':
+        this.splitTerminal(tab, 'vertical');
         break;
       case 'pacman':
         this.executeCommand(`sudo pacman -S ${this.selectedText}`);
@@ -919,20 +1535,12 @@ class TerminalApp {
   }
 
   openCurrentFolder(tab) {
-    // Get current working directory from tab
-    tab.ptyProcess.write('pwd\r');
-    
-    // Alternative: use xdg-open with current path
-    const fs = require('fs');
-    
-    // Read the cwd from /proc if available (Linux)
     try {
       const procPath = `/proc/${tab.ptyProcess.pid}/cwd`;
       if (fs.existsSync(procPath)) {
         const cwd = fs.readlinkSync(procPath);
         exec(`xdg-open "${cwd}"`);
       } else {
-        // Fallback: open home directory
         exec(`xdg-open "${os.homedir()}"`);
       }
     } catch (err) {
@@ -940,107 +1548,79 @@ class TerminalApp {
     }
   }
 
-  detachTab(tabId) {
-    const tab = this.tabs.find(t => t.id === tabId);
-    if (!tab || this.tabs.length === 1) return;
-    
-    // For NW.js
-    if (typeof nw !== 'undefined') {
-      const win = nw.Window.open('index.html', {
-        width: 1000,
-        height: 600,
-        title: tab.name
-      });
-      
-      win.on('loaded', () => {
-        // New window will create its own terminal
-        this.closeTab(tabId);
-      });
-    } 
-    // For Electron
-    else if (typeof require !== 'undefined') {
-      try {
-        const { BrowserWindow } = require('electron').remote || require('@electron/remote');
-        const newWin = new BrowserWindow({
-          width: 1000,
-          height: 600,
-          autoHideMenuBar: true,
-          webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
-          }
-        });
-        
-        newWin.loadFile('index.html');
-        newWin.setMenuBarVisibility(false);
-        
-        // Close the tab in current window
-        setTimeout(() => {
-          this.closeTab(tabId);
-        }, 500);
-      } catch (err) {
-        console.error('Detach not supported in this environment');
-      }
+  splitTerminal(tab, direction) {
+    if (tab.splits.length >= 2) {
+      alert('Maximum 2 splits per tab');
+      return;
     }
-  }
-
-  applySettings() {
-    // Get new settings
-    this.settings.fontFamily = document.getElementById('font-family').value;
-    this.settings.fontSize = parseInt(document.getElementById('font-size').value);
-    this.settings.theme = document.getElementById('theme').value;
     
-    // Save to localStorage
-    this.saveSettings();
+    tab.splitDirection = direction;
     
-    // Apply to all terminals
-    const currentTheme = this.themes[this.settings.theme];
+    // Create new terminal for split
+    const { term, fitAddon, ptyProcess, terminalId } = this.createTerminal(tab.cwd);
     
-    this.tabs.forEach(tab => {
-      tab.term.options.fontFamily = `"${this.settings.fontFamily}", "Courier New", monospace`;
-      tab.term.options.fontSize = this.settings.fontSize;
-      tab.term.options.theme = {
-        background: currentTheme.background,
-        foreground: currentTheme.foreground,
-        cursor: currentTheme.cursor,
-        cursorAccent: currentTheme.background,
-        selection: '#388bfd40',
-        black: currentTheme.black,
-        red: currentTheme.red,
-        green: currentTheme.green,
-        yellow: currentTheme.yellow,
-        blue: currentTheme.blue,
-        magenta: currentTheme.magenta,
-        cyan: currentTheme.cyan,
-        white: currentTheme.white,
-        brightBlack: currentTheme.brightBlack,
-        brightRed: currentTheme.brightRed,
-        brightGreen: currentTheme.brightGreen,
-        brightYellow: currentTheme.brightYellow,
-        brightBlue: currentTheme.brightBlue,
-        brightMagenta: currentTheme.brightMagenta,
-        brightCyan: currentTheme.brightCyan,
-        brightWhite: currentTheme.brightWhite
-      };
-      
-      // Refit terminal
-      setTimeout(() => {
-        tab.fitAddon.fit();
-      }, 100);
+    // If no splits yet, add the main terminal as first split
+    if (tab.splits.length === 0) {
+      tab.splits.push({
+        term: tab.term,
+        fitAddon: tab.fitAddon,
+        ptyProcess: tab.ptyProcess,
+        terminalId: tab.terminalId
+      });
+    }
+    
+    // Add new split
+    tab.splits.push({
+      term,
+      fitAddon,
+      ptyProcess,
+      terminalId
     });
     
-    // Update terminal area background
-    this.terminalArea.style.background = currentTheme.background;
-    
-    // Focus active terminal
-    const activeTab = this.tabs.find(t => t.id === this.activeTab);
-    if (activeTab) {
-      activeTab.term.focus();
+    // Recreate terminal element
+    if (tab.terminalElement) {
+      tab.terminalElement.remove();
+      tab.terminalElement = null;
     }
+    
+    // Re-render the tab
+    this.switchTab(tab.id);
+  }
+
+  handleHistoryContextAction(action) {
+    const tab = this.tabs.find(t => t.id === this.activeTab);
+    if (!tab || !this.selectedHistoryCommand) return;
+    
+    switch (action) {
+      case 'execute':
+        if (tab.splits.length > 0) {
+          tab.splits[this.focusedSplitIndex || 0].ptyProcess.write(this.selectedHistoryCommand + '\r');
+        } else {
+          tab.ptyProcess.write(this.selectedHistoryCommand + '\r');
+        }
+        break;
+      case 'copy-to-input':
+        if (tab.splits.length > 0) {
+          tab.splits[this.focusedSplitIndex || 0].ptyProcess.write(this.selectedHistoryCommand);
+        } else {
+          tab.ptyProcess.write(this.selectedHistoryCommand);
+        }
+        (tab.splits[this.focusedSplitIndex || 0]?.term || tab.term).focus();
+        break;
+      case 'copy':
+        if (typeof nw !== 'undefined') {
+          nw.Clipboard.get().set(this.selectedHistoryCommand, 'text');
+        } else {
+          navigator.clipboard.writeText(this.selectedHistoryCommand);
+        }
+        break;
+    }
+    
+    this.hideHistoryContextMenu();
   }
 }
 
-// Initialize app when DOM is ready
+// Initialize app
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => new TerminalApp());
 } else {
