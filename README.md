@@ -8,6 +8,8 @@ You just click command from history tab and it gets executed, or you right click
 Why is it better then others?<br>
 -Eaiser to execute previous commands from history<br>
 -Eaiser to clear input<br>
+-Quick password button<br>
+-Install based on selection<br>
 -It auto adds sudo to pacman, apt-get. Cause WHY NOT? Why just warn me i need sudo and waste my time... (broken currently)<br><br>
 AI won't be added, but I'm considering it
 <br>
