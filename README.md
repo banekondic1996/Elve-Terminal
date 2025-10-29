@@ -8,9 +8,10 @@ You just click command from history tab and it gets executed, or you right click
 Why is it better then others?<br>
 -Eaiser to execute previous commands from history<br>
 -Eaiser to clear input<br>
--It auto adds sudo to pacman, apt-get. Cause WHY NOT? Why just warn me i need sudo and waste my time...<br><br>
+-It auto adds sudo to pacman, apt-get. Cause WHY NOT? Why just warn me i need sudo and waste my time... (broken currently)<br><br>
 AI won't be added, but I'm considering it
 <br>
 It's just for linux <br> <br>
 **Download** - <a href="https://github.com/banekondic1996/Elve-Terminal/releases/tag/1.0">Link</a> <br><br>
-<img width="1266" height="709" alt="image" src="https://github.com/user-attachments/assets/afb2879e-55c4-4d9b-97cc-15ef03c3406d" />
+<img width="1154" height="733" alt="image" src="https://github.com/user-attachments/assets/c444cbd5-c067-4058-b745-5c50df78143c" />
+
