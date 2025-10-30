@@ -13,7 +13,16 @@ Why is it better then others?<br>
 -It auto adds sudo to pacman, apt-get. Cause WHY NOT? Why just warn me i need sudo and waste my time... (broken currently)<br><br>
 AI won't be added, but I'm considering it
 <br>
-It's just for linux <br> <br>
+It's just for linux <br>
+<br>
+To fix:<br>
+-Theme settings (hue, brightness, opacity)<br>
+-Window detachment, new window launching<br>
+-Input bar affecting CSS and input bar autocomplete missing <br>
+-Settings/Control aliases missing scroll overflow CSS <br>
+-Beep notification when terminal stops printing when minimized, not working <br>
+-Add option to close split view and change orientation <br> <br>
+
 **Download** - <a href="https://github.com/banekondic1996/Elve-Terminal/releases/tag/1.0">Link</a> <br><br>
 <img width="1154" height="733" alt="image" src="https://github.com/user-attachments/assets/c444cbd5-c067-4058-b745-5c50df78143c" />
 
