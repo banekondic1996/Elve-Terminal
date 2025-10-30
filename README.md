@@ -23,7 +23,7 @@ To fix:<br>
 -Beep notification when terminal stops printing when minimized, not working <br>
 -Drag file into terminal to paste file path not working <br>
 -Add option to close split view and change orientation <br> <br>
-
+**Discord server for requests/reporting bugs** - <a href="https://discord.gg/6PP5uqha">Discord</a> <br><br>
 **Download** - <a href="https://github.com/banekondic1996/Elve-Terminal/releases/tag/1.0">Link</a> <br><br>
 <img width="1154" height="733" alt="image" src="https://github.com/user-attachments/assets/c444cbd5-c067-4058-b745-5c50df78143c" />
 
