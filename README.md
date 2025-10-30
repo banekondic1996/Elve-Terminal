@@ -21,6 +21,7 @@ To fix:<br>
 -Input bar affecting CSS and input bar autocomplete missing <br>
 -Settings/Control aliases missing scroll overflow CSS <br>
 -Beep notification when terminal stops printing when minimized, not working <br>
+-Drag file into terminal to paste file path not working <br>
 -Add option to close split view and change orientation <br> <br>
 
 **Download** - <a href="https://github.com/banekondic1996/Elve-Terminal/releases/tag/1.0">Link</a> <br><br>
