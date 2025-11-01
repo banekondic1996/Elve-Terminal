@@ -16,10 +16,8 @@ AI won't be added, but I'm considering it
 It's just for linux <br>
 <br>
 To fix:<br>
--Theme settings (hue, brightness, opacity) not affecting everything (add global coloring using :root CSS)<br>
--Window detachment, new window launching<br>
+-Window detachment missing<br>
 -Input bar affecting CSS and input bar autocomplete missing <br>
--Settings/Control aliases missing scroll overflow CSS <br>
 -Beep notification when terminal stops printing when minimized, not working <br>
 -Drag file into terminal to paste file path not working <br>
 -Add option to close split view and change orientation <br> <br>
