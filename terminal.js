@@ -510,7 +510,7 @@ class TerminalApp {
       detachBtn.innerHTML = '⧉';
       detachBtn.title = 'Detach tab to new window';
       detachBtn.dataset.tabId = tab.id;
-      tabEl.appendChild(detachBtn);
+      //tabEl.appendChild(detachBtn);
       
       if (this.tabs.length > 1) {
         const closeBtn = document.createElement('button');
@@ -684,28 +684,10 @@ class TerminalApp {
       win.on('loaded', () => {
         this.closeTab(tabId);
       });
-    } else if (typeof require !== 'undefined') {
-      try {
-        const { BrowserWindow } = require('electron').remote || require('@electron/remote');
-        const newWin = new BrowserWindow({
-          width: 1000,
-          height: 600,
-          autoHideMenuBar: true,
-          webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
-          }
-        });
-        
-        newWin.loadFile('index.html');
-        newWin.setMenuBarVisibility(false);
-        
-        setTimeout(() => {
-          this.closeTab(tabId);
-        }, 500);
-      } catch (err) {
-        console.error('Detach not supported');
-      }
+    } else{
+      const { ipcRenderer } = require('electron');
+      ipcRenderer.send('open-new-window');
+      newWin.src = tab.getWebview().src;
     }
   }
 
@@ -1132,24 +1114,9 @@ class TerminalApp {
         width: 1200,
         height: 800
       });
-    } else if (typeof require !== 'undefined') {
-      try {
-        const { BrowserWindow } = require('electron').remote || require('@electron/remote');
-        const newWin = new BrowserWindow({
-          width: 1200,
-          height: 800,
-          autoHideMenuBar: true,
-          webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
-          }
-        });
-        
-        newWin.loadFile('index.html');
-        newWin.setMenuBarVisibility(false);
-      } catch (err) {
-        console.error('New window not supported');
-      }
+    } else {
+      const { ipcRenderer } = require('electron');
+      ipcRenderer.send('open-new-window');
     }
   }
 
