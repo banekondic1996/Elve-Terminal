@@ -139,7 +139,7 @@ class TerminalApp {
         brightWhite: '#eceff4'
       }
     };
-    
+
     // Cache DOM elements
     this.tabsContainer = document.getElementById('tabs-container');
     this.terminalArea = document.getElementById('terminal-area');
@@ -290,60 +290,30 @@ class TerminalApp {
     const lightBgG = Math.min(255, bgG + 15);
     const lightBgB = Math.min(255, bgB + 15);
     
-    // Apply to all elements
-    document.body.style.background = `rgba(${bgR}, ${bgG}, ${bgB}, ${opacity})`;
+    document.documentElement.style.setProperty('--main-color', `rgba(${bgR}, ${bgG}, ${bgB}, ${opacity})`);
+    document.documentElement.style.setProperty('--secondary-color', `rgba(${lightBgR}, ${lightBgG}, ${lightBgB}, ${opacity})`);
+    document.documentElement.style.setProperty('--hue', `${hue}deg`);
+     document.body.style.background = `rgba(${bgR}, ${bgG}, ${bgB}, ${opacity})`;
     document.body.style.color = adjustedFg;
     
     const container = document.querySelector('.terminal-container');
     if (container) container.style.background = `rgba(${bgR}, ${bgG}, ${bgB}, ${opacity})`;
     
-    const tabBar = document.querySelector('.tab-bar');
-    if (tabBar) tabBar.style.background = `rgba(${lightBgR}, ${lightBgG}, ${lightBgB}, ${opacity})`;
     
-    const sidebars = document.querySelectorAll('.history-sidebar, .settings-panel, .alias-panel');
-    sidebars.forEach(sidebar => {
-      sidebar.style.background = `rgba(${lightBgR}, ${lightBgG}, ${lightBgB}, ${opacity})`;
-    });
-    const colors = document.querySelectorAll('.color');
-    colors.forEach(color => {
-      color.style.background = `rgba(${bgR}, ${bgG}, ${bgB}, ${opacity})`;
-    });
-    
-    const inputBox = document.getElementById('input-box-container');
-    if (inputBox) {
-      inputBox.style.background = `rgba(${lightBgR}, ${lightBgG}, ${lightBgB}, ${opacity})`;
-    }
-    
-    const bottomInput = document.getElementById('bottom-input');
-    if (bottomInput) {
-      bottomInput.style.background = `rgba(${bgR}, ${bgG}, ${bgB}, ${opacity})`;
-      bottomInput.style.color = adjustedFg;
-    }
-    
-    const contextMenus = document.querySelectorAll('.context-menu, .dropdown-menu');
-    contextMenus.forEach(menu => {
-      menu.style.background = `rgba(${lightBgR}, ${lightBgG}, ${lightBgB}, ${opacity})`;
-    });
-    
-    const modalOverlay = document.getElementById('password-overlay');
-    if (modalOverlay) {
-      const modal = modalOverlay.querySelector('.modal-dialog');
-      if (modal) {
-        modal.style.background = `rgba(${lightBgR}, ${lightBgG}, ${lightBgB}, ${opacity})`;
-      }
-    }
-  }
 
+  }
+  
   startOutputMonitor() {
-    this.outputMonitorInterval = setInterval(() => {
-      if (this.settings.beepOnIdle && document.hidden) {
+    this.outputMonitorInterval = setInterval(async () => {
+      
+      if (this.settings.beepOnIdle) {
         const now = Date.now();
-        
+  
         Object.keys(this.lastOutputTime).forEach(tabId => {
           const timeSinceOutput = now - this.lastOutputTime[tabId];
-          
+  
           // If had output before, but now idle for 3 seconds
-          if (this.hasOutputSinceCheck[tabId] && timeSinceOutput >= 3000 && timeSinceOutput < 3200) {
+          if (this.hasOutputSinceCheck[tabId] && timeSinceOutput >= 1000 && timeSinceOutput < 1200) {
             this.playBeep();
             this.hasOutputSinceCheck[tabId] = false;
           }

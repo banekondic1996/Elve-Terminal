@@ -1,6 +1,6 @@
-const { app, BrowserWindow } = require('electron');
+const { app,ipcMain, BrowserWindow } = require('electron');
 const path = require('path');
-
+const win = null;
 function createWindow() {
   const win = new BrowserWindow({
     width: 1000,
@@ -11,9 +11,19 @@ function createWindow() {
     },
     menu: null
     
-  });
+  }); 
   win.removeMenu();
   win.loadFile('index.html');
+  win.webContents.audioMuted = true;
+  win.on('minimize', () => {
+    console.log('Window minimized → unmuting audio');
+    win.webContents.audioMuted = false;
+  });
+
+  win.on('restore', () => {
+    console.log('Window restored → muting audio');
+    win.webContents.audioMuted = true;
+  });
 }
 
 app.whenReady().then(createWindow);
