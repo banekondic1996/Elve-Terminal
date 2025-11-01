@@ -245,6 +245,7 @@ body {
   flex-direction: column;
   box-shadow: -2px 0 8px rgba(0, 0, 0, 0.3);
   filter: hue-rotate(var(--hue));
+  overflow: auto;
 }
 
 .history-header,
