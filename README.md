@@ -1,4 +1,5 @@
 # <img width="82" height="auto" alt="Elve Terminal EE" src="https://github.com/user-attachments/assets/b3ade798-01fe-4f30-96b2-aa524476716c" /> Elve Terminal
+**Demonstration video** - <a href='https://www.youtube.com/watch?v=pjWb9IDcWO0'>Link</a> <br> <br>
 This is just vibe coded Terminal that i made for personal usage. <br>
 Why?<br>
 Well cause I'm annoyed with copy+c copy+v and tracking clipboard history of commands all the time,
@@ -21,7 +22,6 @@ To fix:<br>
 -Beep notification when terminal stops printing when minimized, not working <br>
 -Drag file into terminal to paste file path not working <br>
 -Add option to close split view and change orientation <br> <br>
-**Demonstration video** - <a href='https://www.youtube.com/watch?v=pjWb9IDcWO0'>Link</a> <br> <br>
 **Discord server for requests/reporting bugs** - <a href="https://discord.gg/6PP5uqha">Discord</a> <br><br>
 **Download** - <a href="https://github.com/banekondic1996/Elve-Terminal/releases/tag/1.0">Link</a> <br><br>
 <img width="1154" height="733" alt="image" src="https://github.com/user-attachments/assets/c444cbd5-c067-4058-b745-5c50df78143c" />
