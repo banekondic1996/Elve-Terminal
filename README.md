@@ -14,7 +14,7 @@ Why is it better then others?<br>
 -It auto adds sudo to pacman, apt-get. Cause WHY NOT? Why just warn me i need sudo and waste my time... (broken currently)<br><br>
 AI won't be added, but I'm considering it
 <br>
-It's just for linux <br>
+It's just for linux, but can be built for Windows <br>
 <br>
 To fix:<br>
 -Window detachment missing<br>
