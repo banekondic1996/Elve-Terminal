@@ -18,7 +18,6 @@ It's just for Linux, but can be built for Windows <br> <br>
 **To fix:**<br>
 -Window detachment missing<br>
 -Input bar affecting CSS and input bar autocomplete missing <br>
--Beep notification when terminal stops printing when minimized, not working <br>
 -Drag file into terminal to paste file path not working <br>
 -Add option to close split view and change orientation <br>
 -Theme options in settings <br>
