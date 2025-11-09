@@ -18,9 +18,7 @@ It's just for Linux, but can be built for Windows <br> <br>
 **To fix:**<br>
 -Window detachment missing<br>
 -Input bar affecting CSS and input bar autocomplete missing <br>
--Drag file into terminal to paste file path not working <br>
 -Add option to close split view and change orientation <br>
--Theme options in settings <br>
 <br>
 **Discord server for requests/reporting bugs** - <a href="https://discord.gg/6PP5uqha">Discord</a> <br><br>
 **Download** - <a href="https://github.com/banekondic1996/Elve-Terminal/releases/tag/1.0">Link</a> <br><br>
