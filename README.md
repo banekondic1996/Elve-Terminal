@@ -16,11 +16,14 @@ It's just for Linux, but can be built for Windows <br> <br>
 -It auto adds sudo to pacman, apt-get. Cause WHY NOT? Why just warn me i need sudo and waste my time... (broken currently)<br>
 
 **To fix:**<br>
--Window detachment missing<br>
--Input bar affecting CSS and input bar autocomplete missing <br>
--Add option to close split view and change orientation <br>
+<pre>
+-History should be pulling each time we enter or press command in history panel 
+  (Distinct results, sliced to 60 enteries after) !important to fix
+-Window detachment missing
+-Input bar affecting CSS and input bar autocomplete missing
+-Add option to close split view and change orientation
 -Copying using CTRL + C not working
-<br>
+</pre>
 **Discord server for requests/reporting bugs** - <a href="https://discord.gg/6PP5uqha">Discord</a> <br><br>
 **Download** - <a href="https://github.com/banekondic1996/Elve-Terminal/releases/tag/1.0">Link</a> <br><br>
 <img width="1154" height="733" alt="image" src="https://github.com/user-attachments/assets/c444cbd5-c067-4058-b745-5c50df78143c" />
