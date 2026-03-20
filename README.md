@@ -17,7 +17,7 @@ It's just for Linux, but can be built for Windows <br> <br>
 
 **To fix:**<br>
 <pre>
--History should be pulling each time we enter or press command in history panel 
+-History should be pulling each time we enter or press command in history panel or press view in split view
   (Distinct results, sliced to 60 enteries after) !important to fix
 -Window detachment missing
 -Input bar affecting CSS and input bar autocomplete missing
